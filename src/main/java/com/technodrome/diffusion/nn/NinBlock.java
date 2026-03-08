@@ -1,6 +1,8 @@
 package com.technodrome.diffusion.nn;
 
 import ai.djl.ndarray.NDList;
+import ai.djl.ndarray.NDManager;
+import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.AbstractBlock;
 import ai.djl.training.ParameterStore;
@@ -22,6 +24,11 @@ public class NinBlock extends AbstractBlock {
 
     public NinBlock(int outChannels) {
         this(outChannels, 1.0f);
+    }
+
+    @Override
+    protected void initializeChildBlocks(NDManager manager, DataType dataType, Shape... inputShapes) {
+        conv.initialize(manager, dataType, inputShapes);
     }
 
     @Override

@@ -64,9 +64,14 @@ public class GroupNormBlock extends AbstractBlock {
         NDArray y = x.reshape(batchSize, G, C / G, H, W);
 
         // Compute mean and variance over (C/G, H, W) dimensions
-        NDArray mean = y.mean(new int[]{2, 3, 4}, true);
+        // DJL PyTorch only supports single-axis mean, so flatten then reduce
+        NDArray flat = y.reshape(batchSize, G, -1); // [B, G, (C/G)*H*W]
+        NDArray mean = flat.mean(new int[]{2}, true); // [B, G, 1]
+        mean = mean.reshape(batchSize, G, 1, 1, 1);  // broadcast back to [B, G, C/G, H, W]
         NDArray diff = y.sub(mean);
-        NDArray var = diff.square().mean(new int[]{2, 3, 4}, true);
+        NDArray diffFlat = diff.reshape(batchSize, G, -1);
+        NDArray var = diffFlat.square().mean(new int[]{2}, true); // [B, G, 1]
+        var = var.reshape(batchSize, G, 1, 1, 1);
 
         // Normalize
         y = diff.div(var.add(EPS).sqrt());
@@ -75,7 +80,12 @@ public class GroupNormBlock extends AbstractBlock {
         y = y.reshape(batchSize, C, H, W);
 
         // Scale and shift: gamma [C] -> [1, C, 1, 1], beta [C] -> [1, C, 1, 1]
-        y = y.mul(g.reshape(1, C, 1, 1)).add(b.reshape(1, C, 1, 1));
+        // Close reshaped views explicitly — they are created on the parameter's (parent) manager
+        // and would otherwise leak, accumulating ~102 views per training step.
+        try (NDArray gReshaped = g.reshape(1, C, 1, 1);
+             NDArray bReshaped = b.reshape(1, C, 1, 1)) {
+            y = y.mul(gReshaped).add(bReshaped);
+        }
 
         return new NDList(y);
     }

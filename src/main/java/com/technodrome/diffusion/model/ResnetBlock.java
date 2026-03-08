@@ -2,6 +2,8 @@ package com.technodrome.diffusion.model;
 
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
+import ai.djl.ndarray.NDManager;
+import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.AbstractBlock;
 import ai.djl.nn.norm.Dropout;
@@ -62,6 +64,32 @@ public class ResnetBlock extends AbstractBlock {
             } else {
                 shortcut = addChildBlock("shortcut", new NinBlock(outCh));
             }
+        }
+    }
+
+    @Override
+    protected void initializeChildBlocks(NDManager manager, DataType dataType, Shape... inputShapes) {
+        // inputShapes: [xShape: [B, inCh, H, W], tembShape: [B, tembDim]]
+        Shape xShape = inputShapes[0];
+        Shape tembShape = inputShapes[1];
+
+        // norm1, swish1, conv1 all take xShape
+        norm1.initialize(manager, dataType, xShape);
+        swish1.initialize(manager, dataType, xShape);
+        conv1.initialize(manager, dataType, xShape);
+
+        // tembProj takes [B, tembDim]
+        tembProj.initialize(manager, dataType, tembShape);
+
+        // After conv1: [B, outCh, H, W]
+        Shape hShape = new Shape(xShape.get(0), outCh, xShape.get(2), xShape.get(3));
+        norm2.initialize(manager, dataType, hShape);
+        swish2.initialize(manager, dataType, hShape);
+        dropout.initialize(manager, dataType, hShape);
+        conv2.initialize(manager, dataType, hShape);
+
+        if (useShortcut) {
+            shortcut.initialize(manager, dataType, xShape);
         }
     }
 

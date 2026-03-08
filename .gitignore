@@ -66,9 +66,11 @@ secrets.toml
 #Claude
 .claude/
 
+output/
 checkpoints/
 samples/
 *.png
+*.jfr
 
 #Gradle
 gradle/

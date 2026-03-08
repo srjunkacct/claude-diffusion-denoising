@@ -1,6 +1,8 @@
 package com.technodrome.diffusion.nn;
 
 import ai.djl.ndarray.NDList;
+import ai.djl.ndarray.NDManager;
+import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.AbstractBlock;
 import ai.djl.nn.Parameter;
@@ -31,6 +33,11 @@ public class DenseBlock extends AbstractBlock {
     /** Convenience: bias=true, initScale=1 */
     public DenseBlock(int outFeatures) {
         this(outFeatures, 1.0f, true);
+    }
+
+    @Override
+    protected void initializeChildBlocks(NDManager manager, DataType dataType, Shape... inputShapes) {
+        linear.initialize(manager, dataType, inputShapes);
     }
 
     @Override

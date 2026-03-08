@@ -17,21 +17,13 @@ public final class NNUtils {
 
     /** Sum over all dimensions except batch (dim 0). */
     public static NDArray sumflat(NDArray x) {
-        int ndim = x.getShape().dimension();
-        int[] axes = new int[ndim - 1];
-        for (int i = 0; i < axes.length; i++) {
-            axes[i] = i + 1;
-        }
-        return x.sum(axes);
+        // DJL PyTorch only supports single-axis reduction; flatten then sum
+        return flatten(x).sum(new int[]{1});
     }
 
     /** Mean over all dimensions except batch (dim 0). */
     public static NDArray meanflat(NDArray x) {
-        int ndim = x.getShape().dimension();
-        int[] axes = new int[ndim - 1];
-        for (int i = 0; i < axes.length; i++) {
-            axes[i] = i + 1;
-        }
-        return x.mean(axes);
+        // DJL PyTorch only supports single-axis reduction; flatten then mean
+        return flatten(x).mean(new int[]{1});
     }
 }

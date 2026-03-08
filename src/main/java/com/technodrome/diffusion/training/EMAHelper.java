@@ -39,14 +39,25 @@ public class EMAHelper {
 
     /** Update shadow parameters with EMA decay. Call after each optimizer step. */
     public void update() {
-        for (var pair : model.getParameters()) {
-            Parameter param = pair.getValue();
-            if (param.requiresGradient()) {
-                NDArray shadow = shadowParams.get(pair.getKey());
-                if (shadow != null) {
-                    NDArray current = param.getArray();
-                    // shadow = decay * shadow + (1 - decay) * current
-                    shadow.muli(decay).addi(current.mul(1.0f - decay));
+        if (shadowParams.isEmpty()) return;
+
+        // Pre-create scalar constants to avoid per-param leak from muli(Number).
+        // DJL's muli(Number) internally creates a scalar NDArray that is never closed.
+        NDManager mgr = shadowParams.values().iterator().next().getManager();
+        try (NDArray decayScalar = mgr.create(decay);
+             NDArray oneMinusDecay = mgr.create(1.0f - decay)) {
+            for (var pair : model.getParameters()) {
+                Parameter param = pair.getValue();
+                if (param.requiresGradient()) {
+                    NDArray shadow = shadowParams.get(pair.getKey());
+                    if (shadow != null) {
+                        NDArray current = param.getArray();
+                        // shadow = decay * shadow + (1 - decay) * current
+                        shadow.muli(decayScalar);
+                        try (NDArray scaled = current.mul(oneMinusDecay)) {
+                            shadow.addi(scaled);
+                        }
+                    }
                 }
             }
         }

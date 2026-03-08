@@ -2,6 +2,8 @@ package com.technodrome.diffusion.model;
 
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
+import ai.djl.ndarray.NDManager;
+import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.AbstractBlock;
 import ai.djl.nn.pooling.Pool;
@@ -23,6 +25,13 @@ public class DownsampleBlock extends AbstractBlock {
         this.withConv = withConv;
         if (withConv) {
             conv = addChildBlock("conv", new Conv2dBlock(channels, 3, 2, 1.0f, true));
+        }
+    }
+
+    @Override
+    protected void initializeChildBlocks(NDManager manager, DataType dataType, Shape... inputShapes) {
+        if (conv != null) {
+            conv.initialize(manager, dataType, inputShapes);
         }
     }
 

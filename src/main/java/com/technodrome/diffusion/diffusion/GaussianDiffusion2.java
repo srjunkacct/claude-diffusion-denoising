@@ -90,12 +90,12 @@ public class GaussianDiffusion2 {
     // --- Extract coefficient at timestep and broadcast ---
     private NDArray extract(double[] a, NDArray t, Shape xShape) {
         // Gather coefficients at timestep indices: a[t[i]] for each batch element
-        long[] tLong = t.toLongArray();
+        long[] tLong = t.toType(DataType.INT64, false).toLongArray();
         float[] gathered = new float[tLong.length];
         for (int i = 0; i < tLong.length; i++) {
             gathered[i] = (float) a[(int) tLong[i]];
         }
-        NDArray out = t.getManager().create(gathered);
+        NDArray out = t.getManager().create(gathered).toDevice(t.getDevice(), false);
         long[] shape = new long[xShape.dimension()];
         java.util.Arrays.fill(shape, 1);
         shape[0] = xShape.get(0);
@@ -106,7 +106,8 @@ public class GaussianDiffusion2 {
 
     public NDArray qSample(NDArray xStart, NDArray t, NDArray noise) {
         if (noise == null) {
-            noise = xStart.getManager().randomNormal(xStart.getShape());
+            noise = xStart.getManager().randomNormal(xStart.getShape())
+                    .toDevice(xStart.getDevice(), false);
         }
         return extract(sqrtAlphasCumprod, t, xStart.getShape()).mul(xStart)
                 .add(extract(sqrtOneMinusAlphasCumprod, t, xStart.getShape()).mul(noise));
@@ -213,7 +214,8 @@ public class GaussianDiffusion2 {
         NDArray modelLogVar = mv[2];
         NDArray predXstart = mv[3];
 
-        NDArray noise = x.getManager().randomNormal(x.getShape());
+        NDArray noise = x.getManager().randomNormal(x.getShape())
+                .toDevice(x.getDevice(), false);
         // No noise when t == 0
         NDArray nonzeroMask = t.eq(0).toType(DataType.FLOAT32, false).neg().add(1);
         long[] maskShape = new long[x.getShape().dimension()];
@@ -230,9 +232,17 @@ public class GaussianDiffusion2 {
                                NDManager manager, Shape shape) {
         NDArray img = manager.randomNormal(shape);
         for (int i = numTimesteps - 1; i >= 0; i--) {
-            NDArray t = manager.full(new Shape(shape.get(0)), i).toType(DataType.INT32, false);
-            NDArray[] result = pSample(denoiseFn, img, t, true);
-            img = result[0];
+            // Use a sub-manager per denoising step so intermediates from each
+            // forward pass (~50-100 MB) are freed immediately instead of
+            // accumulating across all 1000 steps
+            try (NDManager stepMgr = manager.newSubManager()) {
+                img.attach(stepMgr);
+                NDArray t = stepMgr.full(new Shape(shape.get(0)), i)
+                        .toType(DataType.INT32, false);
+                NDArray[] result = pSample(denoiseFn, img, t, true);
+                img = result[0];
+                img.attach(manager); // keep result alive for next step
+            }
         }
         return img;
     }
@@ -281,7 +291,8 @@ public class GaussianDiffusion2 {
     public NDArray trainingLosses(BiFunction<NDArray, NDArray, NDArray> denoiseFn,
                                   NDArray xStart, NDArray t, NDArray noise) {
         if (noise == null) {
-            noise = xStart.getManager().randomNormal(xStart.getShape());
+            noise = xStart.getManager().randomNormal(xStart.getShape())
+                    .toDevice(xStart.getDevice(), false);
         }
         NDArray xT = qSample(xStart, t, noise);
 

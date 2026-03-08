@@ -1,6 +1,8 @@
 package com.technodrome.diffusion.nn;
 
 import ai.djl.ndarray.NDList;
+import ai.djl.ndarray.NDManager;
+import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.AbstractBlock;
 import ai.djl.nn.convolutional.Conv2d;
@@ -36,6 +38,11 @@ public class Conv2dBlock extends AbstractBlock {
     /** Convenience: 3x3, stride 1, bias=true, initScale=1 */
     public Conv2dBlock(int outChannels) {
         this(outChannels, 3, 1, 1.0f, true);
+    }
+
+    @Override
+    protected void initializeChildBlocks(NDManager manager, DataType dataType, Shape... inputShapes) {
+        conv.initialize(manager, dataType, inputShapes);
     }
 
     @Override

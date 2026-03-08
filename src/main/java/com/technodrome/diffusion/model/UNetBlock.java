@@ -3,6 +3,8 @@ package com.technodrome.diffusion.model;
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDArrays;
 import ai.djl.ndarray.NDList;
+import ai.djl.ndarray.NDManager;
+import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.AbstractBlock;
 import ai.djl.training.ParameterStore;
@@ -28,8 +30,10 @@ import java.util.List;
 public class UNetBlock extends AbstractBlock {
 
     private final int ch;
+    private final int[] chMult;
     private final int numResolutions;
     private final int numResBlocks;
+    private final int imageSize;
 
     // Timestep embedding
     private final DenseBlock tembDense0;
@@ -71,8 +75,10 @@ public class UNetBlock extends AbstractBlock {
                      int[] attnResolutions, float dropout, boolean resampWithConv,
                      int imageSize) {
         this.ch = ch;
+        this.chMult = chMult.clone();
         this.numResolutions = chMult.length;
         this.numResBlocks = numResBlocks;
+        this.imageSize = imageSize;
 
         int tembDim = ch * 4;
 
@@ -245,6 +251,90 @@ public class UNetBlock extends AbstractBlock {
         h = convOut.forward(ps, new NDList(h), training).singletonOrThrow();
 
         return new NDList(h);
+    }
+
+    @Override
+    protected void initializeChildBlocks(NDManager manager, DataType dataType,
+                                          Shape... inputShapes) {
+        Shape xShape = inputShapes[0]; // [B, inCh, H, W]
+        long B = xShape.get(0);
+        int tembDim = ch * 4;
+
+        // --- Timestep embedding ---
+        Shape tembInShape = new Shape(B, ch);
+        tembDense0.initialize(manager, dataType, tembInShape);
+        Shape tembShape = new Shape(B, tembDim);
+        tembDense1.initialize(manager, dataType, tembShape);
+
+        // --- Encoder ---
+        convIn.initialize(manager, dataType, xShape);
+        long curH = xShape.get(2), curW = xShape.get(3);
+
+        // Track skip connection channel counts for decoder
+        List<Integer> skipChannels = new ArrayList<>();
+        skipChannels.add(ch);
+
+        int currentCh = ch;
+        for (int iLevel = 0; iLevel < numResolutions; iLevel++) {
+            int levelCh = ch * chMult[iLevel];
+
+            for (int iBlock = 0; iBlock < numResBlocks; iBlock++) {
+                Shape hShape = new Shape(B, currentCh, curH, curW);
+                downResBlocks[iLevel][iBlock].initialize(manager, dataType, hShape, tembShape);
+                currentCh = levelCh;
+
+                if (downAttnBlocks[iLevel] != null) {
+                    Shape attnShape = new Shape(B, currentCh, curH, curW);
+                    downAttnBlocks[iLevel][iBlock].initialize(manager, dataType, attnShape);
+                }
+                skipChannels.add(currentCh);
+            }
+
+            if (downsamples[iLevel] != null) {
+                Shape dsShape = new Shape(B, currentCh, curH, curW);
+                downsamples[iLevel].initialize(manager, dataType, dsShape);
+                curH /= 2;
+                curW /= 2;
+                skipChannels.add(currentCh);
+            }
+        }
+
+        // --- Middle ---
+        Shape midShape = new Shape(B, currentCh, curH, curW);
+        midBlock1.initialize(manager, dataType, midShape, tembShape);
+        midAttn.initialize(manager, dataType, midShape);
+        midBlock2.initialize(manager, dataType, midShape, tembShape);
+
+        // --- Decoder ---
+        for (int iLevel = numResolutions - 1; iLevel >= 0; iLevel--) {
+            int levelCh = ch * chMult[iLevel];
+
+            for (int iBlock = 0; iBlock < numResBlocks + 1; iBlock++) {
+                int skipCh = skipChannels.remove(skipChannels.size() - 1);
+                int concatCh = currentCh + skipCh;
+
+                Shape concatShape = new Shape(B, concatCh, curH, curW);
+                upResBlocks[iLevel][iBlock].initialize(manager, dataType, concatShape, tembShape);
+                currentCh = levelCh;
+
+                if (upAttnBlocks[iLevel] != null) {
+                    Shape attnShape = new Shape(B, currentCh, curH, curW);
+                    upAttnBlocks[iLevel][iBlock].initialize(manager, dataType, attnShape);
+                }
+            }
+
+            if (upsamples[iLevel] != null) {
+                Shape usShape = new Shape(B, currentCh, curH, curW);
+                upsamples[iLevel].initialize(manager, dataType, usShape);
+                curH *= 2;
+                curW *= 2;
+            }
+        }
+
+        // --- End ---
+        Shape endShape = new Shape(B, currentCh, curH, curW);
+        normOut.initialize(manager, dataType, endShape);
+        convOut.initialize(manager, dataType, endShape);
     }
 
     @Override

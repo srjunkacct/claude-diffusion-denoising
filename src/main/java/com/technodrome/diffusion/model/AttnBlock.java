@@ -2,6 +2,8 @@ package com.technodrome.diffusion.model;
 
 import ai.djl.ndarray.NDArray;
 import ai.djl.ndarray.NDList;
+import ai.djl.ndarray.NDManager;
+import ai.djl.ndarray.types.DataType;
 import ai.djl.ndarray.types.Shape;
 import ai.djl.nn.AbstractBlock;
 import ai.djl.training.ParameterStore;
@@ -37,6 +39,15 @@ public class AttnBlock extends AbstractBlock {
         kProj = addChildBlock("k", new NinBlock(channels));
         vProj = addChildBlock("v", new NinBlock(channels));
         projOut = addChildBlock("proj_out", new NinBlock(channels, 0.0f)); // init_scale=0
+    }
+
+    @Override
+    protected void initializeChildBlocks(NDManager manager, DataType dataType, Shape... inputShapes) {
+        norm.initialize(manager, dataType, inputShapes);
+        qProj.initialize(manager, dataType, inputShapes);
+        kProj.initialize(manager, dataType, inputShapes);
+        vProj.initialize(manager, dataType, inputShapes);
+        projOut.initialize(manager, dataType, inputShapes);
     }
 
     @Override
