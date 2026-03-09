@@ -130,6 +130,7 @@ public class TrainCelebAHQ implements Runnable {
             trainerConfig.gradClip = gradClip;
             trainerConfig.outputDir = outputDir;
             trainerConfig.randflip = randflip;
+            trainerConfig.numTimesteps = timesteps;
             trainerConfig.sampleBatchSize = 4; // Fewer samples for 256x256
 
             DiffusionTrainer trainer = new DiffusionTrainer(model, trainerConfig);

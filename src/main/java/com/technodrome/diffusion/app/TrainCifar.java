@@ -129,6 +129,7 @@ public class TrainCifar implements Runnable {
             trainerConfig.randflip = randflip;
             trainerConfig.sampleBatchSize = 16;
             trainerConfig.device = device;
+            trainerConfig.numTimesteps = timesteps;
             trainerConfig.heapDumpAtStep = heapDumpAtStep;
 
             DiffusionTrainer trainer = new DiffusionTrainer(model, trainerConfig);

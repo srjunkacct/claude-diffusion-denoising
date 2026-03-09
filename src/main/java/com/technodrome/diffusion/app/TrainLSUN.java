@@ -133,6 +133,7 @@ public class TrainLSUN implements Runnable {
             trainerConfig.gradClip = gradClip;
             trainerConfig.outputDir = outputDir;
             trainerConfig.randflip = randflip;
+            trainerConfig.numTimesteps = timesteps;
             trainerConfig.sampleBatchSize = 4;
 
             DiffusionTrainer trainer = new DiffusionTrainer(model, trainerConfig);

@@ -48,6 +48,7 @@ public class DiffusionTrainer {
         public int sampleBatchSize = 16;
         public Path outputDir = Path.of("output");
         public boolean randflip = true;
+        public int numTimesteps = 1000;
         public int heapDumpAtStep = 0; // Set >0 to dump heap at that step (0 = disabled)
         public Device device = null; // null = use engine default
     }
@@ -156,9 +157,8 @@ public class DiffusionTrainer {
 
                     // Random timesteps
                     int[] tArr = new int[(int) batchSize];
-                    int numTimesteps = getNumTimesteps(lossFn);
                     for (int i = 0; i < tArr.length; i++) {
-                        tArr[i] = random.nextInt(1000); // default T=1000
+                        tArr[i] = random.nextInt(config.numTimesteps);
                     }
                     NDArray t = stepManager.create(tArr).toDevice(device, false);
 
@@ -336,10 +336,6 @@ public class DiffusionTrainer {
                 }
             }
         }
-    }
-
-    private int getNumTimesteps(Object lossFn) {
-        return 1000; // Default, overridden by diffusion class
     }
 
     public int getGlobalStep() {
