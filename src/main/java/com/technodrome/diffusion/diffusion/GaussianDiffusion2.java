@@ -444,9 +444,4 @@ public class GaussianDiffusion2 {
         return r;
     }
 
-    private static float[] toFloat(double[] a) {
-        float[] r = new float[a.length];
-        for (int i = 0; i < a.length; i++) r[i] = (float) a[i];
-        return r;
-    }
 }

@@ -170,6 +170,10 @@ public class DiffusionTrainer {
                     // Forward pass + loss
                     float lossValue;
                     try (GradientCollector gc = Engine.getInstance().newGradientCollector()) {
+                        // DJL's GradientCollector does NOT zero gradients — PyTorch accumulates
+                        // them across backward() calls. Must zero before each step.
+                        zeroGradients();
+
                         NDArray losses = lossFn.apply(xStart, t);
                         if (globalStep == 0) logGpuMemory("step 0 after forward", device);
                         NDArray loss = losses.mean();
@@ -222,7 +226,7 @@ public class DiffusionTrainer {
 
                     // Checkpoint
                     if (globalStep % config.saveInterval == 0) {
-                        checkpointManager.save(model, globalStep);
+                        saveCheckpoint(globalStep);
                     }
                     if (globalStep == 1) logGpuMemory("step 1 end (before stepMgr close)", device);
                 }
@@ -260,7 +264,7 @@ public class DiffusionTrainer {
         }
 
         // Final save
-        checkpointManager.save(model, globalStep);
+        saveCheckpoint(globalStep);
         optimizer.close();
         manager.close();
         logger.info("Training complete at step {}", globalStep);
@@ -276,10 +280,10 @@ public class DiffusionTrainer {
             Shape sampleShape = new Shape(config.sampleBatchSize,
                     imageShape.get(0), imageShape.get(1), imageShape.get(2));
 
-            // Use EMA parameters for sampling
-            var origParams = ema.swapToEma();
+            // Use EMA parameters for sampling (swap in, sample, swap back)
+            ema.swapWithEma();
             NDArray samples = sampleFn.apply(sampleManager, sampleShape);
-            ema.restoreFromEma(origParams);
+            ema.swapWithEma();
 
             // Save tiled image
             String filename = String.format("samples_%d.png", globalStep);
@@ -290,6 +294,29 @@ public class DiffusionTrainer {
         }
         // Release PyTorch's cached CUDA memory after the heavy sampling loop
         GpuMemoryUtils.cudaEmptyCache();
+    }
+
+    /**
+     * Save checkpoint with leak containment.
+     * DJL's saveParameters() calls toByteBuffer() on each GPU parameter, which leaks
+     * a PtNDManager per param via JniUtils.getByteBuffer() → toDevice(cpu) → newSubManager().
+     * We temporarily move params to a scoped manager so leaked sub-managers go there.
+     */
+    private void saveCheckpoint(int step) throws java.io.IOException {
+        try (NDManager saveMgr = manager.newSubManager()) {
+            // Move params to scoped manager so toByteBuffer() leaks go there
+            for (var pair : model.getParameters()) {
+                pair.getValue().getArray().attach(saveMgr);
+            }
+            try {
+                checkpointManager.save(model, step);
+            } finally {
+                // Always move params back to parent, even on error
+                for (var pair : model.getParameters()) {
+                    pair.getValue().getArray().attach(manager);
+                }
+            }
+        }
     }
 
     private NDArray randomFlipLR(NDArray x, NDManager manager) {
@@ -338,23 +365,44 @@ public class DiffusionTrainer {
         }
     }
 
+    /**
+     * Zero all parameter gradients before each backward pass.
+     * DJL's PtGradientCollector does NOT zero gradients — PyTorch's backward()
+     * accumulates into existing .grad tensors. Without zeroing, gradients from
+     * all prior steps accumulate, causing the optimizer to use a stale average
+     * direction and the loss to plateau.
+     *
+     * DJL's built-in zeroGradients() leaks 2 getGradient() wrappers per parameter
+     * per call (never closed). This version properly closes them via try-with-resources.
+     */
+    private void zeroGradients() {
+        for (var pair : model.getParameters()) {
+            if (pair.getValue().requiresGradient() && pair.getValue().getArray().hasGradient()) {
+                try (NDArray grad = pair.getValue().getArray().getGradient()) {
+                    grad.subi(grad); // zero in-place: grad = grad - grad = 0
+                }
+            }
+        }
+    }
+
     public int getGlobalStep() {
         return globalStep;
     }
 
     private void logGpuMemory(String label, Device device) {
-        if (device.isGpu()) {
-            try {
-                MemoryUsage mem = CudaUtils.getGpuMemory(device);
-                long usedMB = mem.getCommitted() / (1024 * 1024);
-                long totalMB = mem.getMax() / (1024 * 1024);
-                long freeMB = totalMB - usedMB;
-                logger.info("[GPU mem] {}: {}MB used / {}MB total ({}MB free)",
-                        label, usedMB, totalMB, freeMB);
-            } catch (Exception e) {
-                // ignore if memory query fails
-            }
-        }
+        return;
+//        if (device.isGpu()) {
+//            try {
+//                MemoryUsage mem = CudaUtils.getGpuMemory(device);
+//                long usedMB = mem.getCommitted() / (1024 * 1024);
+//                long totalMB = mem.getMax() / (1024 * 1024);
+//                long freeMB = totalMB - usedMB;
+//                logger.info("[GPU mem] {}: {}MB used / {}MB total ({}MB free)",
+//                        label, usedMB, totalMB, freeMB);
+//            } catch (Exception e) {
+//                // ignore if memory query fails
+//            }
+//        }
     }
 
     /**

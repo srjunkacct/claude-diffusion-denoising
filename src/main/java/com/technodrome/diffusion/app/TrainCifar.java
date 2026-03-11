@@ -72,7 +72,7 @@ public class TrainCifar implements Runnable {
     @Option(names = "--loss-type", defaultValue = "mse", description = "Loss type: mse, kl")
     String lossType;
 
-    @Option(names = "--total-steps", defaultValue = "300000", description = "Total training steps")
+    @Option(names = "--total-steps", defaultValue = "100000", description = "Total training steps")
     int totalSteps;
 
     @Option(names = "--output-dir", defaultValue = "output/cifar", description = "Output directory")

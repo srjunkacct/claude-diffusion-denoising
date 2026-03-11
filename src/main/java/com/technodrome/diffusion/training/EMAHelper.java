@@ -64,33 +64,28 @@ public class EMAHelper {
     }
 
     /**
-     * Swap shadow parameters into the model for inference.
-     * Returns the original parameters so they can be restored.
+     * In-place swap of model parameters ↔ shadow (EMA) parameters.
+     * Call once before sampling (param → EMA), call again after (EMA → param).
+     *
+     * Uses only GPU-native in-place ops — no duplicate(), toFloatArray(), or CPU transfer.
+     * This avoids leaking PtNDManagers on the parent manager.
      */
-    public Map<String, NDArray> swapToEma() {
-        Map<String, NDArray> originals = new LinkedHashMap<>();
+    public void swapWithEma() {
         for (var pair : model.getParameters()) {
             Parameter param = pair.getValue();
             if (param.requiresGradient()) {
                 NDArray shadow = shadowParams.get(pair.getKey());
                 if (shadow != null) {
-                    NDArray original = param.getArray().duplicate();
-                    originals.put(pair.getKey(), original);
-                    param.getArray().set(shadow.toFloatArray());
+                    NDArray paramArray = param.getArray();
+                    // In-place swap: param ↔ shadow
+                    // diff = param - shadow (temp, closed after use)
+                    // param -= diff → param = shadow ✓
+                    // shadow += diff → shadow = param_orig ✓
+                    try (NDArray diff = paramArray.sub(shadow)) {
+                        paramArray.subi(diff);
+                        shadow.addi(diff);
+                    }
                 }
-            }
-        }
-        return originals;
-    }
-
-    /** Restore original parameters after EMA inference. */
-    public void restoreFromEma(Map<String, NDArray> originals) {
-        for (var pair : model.getParameters()) {
-            Parameter param = pair.getValue();
-            NDArray original = originals.get(pair.getKey());
-            if (original != null) {
-                param.getArray().set(original.toFloatArray());
-                original.close();
             }
         }
     }

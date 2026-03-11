@@ -25,7 +25,7 @@ public class CifarDataset {
      * @return DJL Dataset ready for iteration
      */
     public static Dataset getTrainDataset(int batchSize, boolean shuffle) {
-        // DJL Cifar10 returns images as [H, W, C] float32 in [0, 1]
+        // DJL Cifar10 returns images as [H, W, C] float32 in [0, 255]
         // Convert to NCHW [-1, 1] for PyTorch
         Pipeline pipeline = new Pipeline();
         pipeline.add(new ToNCHW());
@@ -52,10 +52,6 @@ public class CifarDataset {
     }
 
     /**
-     * Transform that converts [0, 1] float to [-1, 1] float.
-     * DJL's Cifar10 already provides [0, 1] normalized images.
-     */
-    /**
      * Transform [H, W, C] -> [C, H, W] for PyTorch NCHW convention.
      */
     private static class ToNCHW implements Transform {
@@ -72,8 +68,9 @@ public class CifarDataset {
     private static class NormalizeToMinusOneOne implements Transform {
         @Override
         public NDArray transform(NDArray array) {
-            // [0, 1] -> [-1, 1]: x * 2 - 1
-            return array.mul(2.0f).sub(1.0f);
+            // DJL Cifar10 provides float32 [0, 255] (NOT [0, 1])
+            // [0, 255] -> [-1, 1]: x / 127.5 - 1
+            return array.div(127.5f).sub(1.0f);
         }
     }
 }

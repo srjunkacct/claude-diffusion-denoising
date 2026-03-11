@@ -28,6 +28,9 @@ Tensors on a stepManager (closed each iteration) are fine — the leak is cleane
 ### Operation result manager rule
 `a.mul(b)` result goes to `a.getManager()`. So `paramArray.mul(x)` → parent manager (leak risk), but `stepInput.mul(paramArray)` → stepManager (safe).
 
+### Always zero gradients before backward()
+DJL's `PtGradientCollector` does NOT zero gradients. PyTorch's `backward()` accumulates into `.grad` tensors. Without zeroing, gradients from all prior steps accumulate, causing the loss to plateau. DJL's built-in `zeroGradients()` leaks 2 `getGradient()` wrappers per parameter per call. Use a custom implementation with try-with-resources.
+
 ### Use ManualAdam, not DJL's built-in Adam
 DJL's `optimizer.update()` creates temp NDArrays on the parent manager that are never closed. `ManualAdam` in this project closes all temps explicitly.
 
